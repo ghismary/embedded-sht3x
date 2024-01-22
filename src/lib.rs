@@ -316,3 +316,198 @@ where
         (data[0] as u16) << 8 | (data[1] as u16)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::*;
+    use embedded_hal_mock::eh1::delay::StdSleep as Delay;
+    use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
+
+    #[test]
+    fn clear_status() {
+        let expectations = [
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, CLEAR_STATUS_COMMAND.to_vec()),
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x81].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        device.clear_status().unwrap();
+        let status = device.get_status().unwrap();
+        assert!(!status.contains(Status::WRITE_DATA_CHECKSUM));
+        assert!(!status.contains(Status::COMMAND));
+        assert!(!status.contains(Status::RESET));
+        assert!(!status.contains(Status::T_TRACKING_ALERT));
+        assert!(!status.contains(Status::RH_TRACKING_ALERT));
+        assert!(!status.contains(Status::HEATER));
+        assert!(!status.contains(Status::ALERT_PENDING));
+        i2c.done();
+    }
+
+    #[test]
+    fn get_status() {
+        let expectations = [
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x81].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        let status = device.get_status().unwrap();
+        assert!(!status.contains(Status::WRITE_DATA_CHECKSUM));
+        assert!(!status.contains(Status::COMMAND));
+        assert!(!status.contains(Status::RESET));
+        assert!(!status.contains(Status::T_TRACKING_ALERT));
+        assert!(!status.contains(Status::RH_TRACKING_ALERT));
+        assert!(!status.contains(Status::HEATER));
+        assert!(!status.contains(Status::ALERT_PENDING));
+        i2c.done();
+    }
+
+    #[test]
+    fn heater() {
+        let expectations = [
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, ENABLE_HEATER_COMMAND.to_vec()),
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x20, 0x03].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x0e].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, DISABLE_HEATER_COMMAND.to_vec()),
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x03].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0xd2].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        device.enable_heater().unwrap();
+        let status = device.get_status().unwrap();
+        assert!(status.contains(Status::WRITE_DATA_CHECKSUM));
+        assert!(status.contains(Status::COMMAND));
+        assert!(!status.contains(Status::RESET));
+        assert!(!status.contains(Status::T_TRACKING_ALERT));
+        assert!(!status.contains(Status::RH_TRACKING_ALERT));
+        assert!(status.contains(Status::HEATER));
+        assert!(!status.contains(Status::ALERT_PENDING));
+        device.disable_heater().unwrap();
+        let status = device.get_status().unwrap();
+        assert!(status.contains(Status::WRITE_DATA_CHECKSUM));
+        assert!(status.contains(Status::COMMAND));
+        assert!(!status.contains(Status::RESET));
+        assert!(!status.contains(Status::T_TRACKING_ALERT));
+        assert!(!status.contains(Status::RH_TRACKING_ALERT));
+        assert!(!status.contains(Status::HEATER));
+        assert!(!status.contains(Status::ALERT_PENDING));
+        i2c.done();
+    }
+
+    #[test]
+    fn reset() {
+        let expectations = [I2cTransaction::write(
+            DEFAULT_I2C_ADDRESS,
+            RESET_COMMAND.to_vec(),
+        )];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        device.reset().unwrap();
+        i2c.done();
+    }
+
+    #[test]
+    fn single_measurement_farenheit() {
+        let expectations = [
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(
+                DEFAULT_I2C_ADDRESS,
+                MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND.to_vec(),
+            ),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x71, 0x17].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x9a].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0xcb, 0x91].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x39].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        device.unit = TemperatureUnit::Farenheit;
+        let measurement = device.single_measurement().unwrap();
+        assert!((measurement.temperature - 90.16).abs() < 0.01);
+        assert!((measurement.humidity - 79.52).abs() < 0.01);
+        i2c.done();
+    }
+
+    #[test]
+    fn single_measurement_high_repeatability() {
+        let expectations = [
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(
+                DEFAULT_I2C_ADDRESS,
+                MEASUREMENT_HIGH_REPEATIBILITY_COMMAND.to_vec(),
+            ),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x5f, 0x58].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x38].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7b, 0xb2].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7d].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        device.repeatability = Repeatability::High;
+        let measurement = device.single_measurement().unwrap();
+        assert!((measurement.temperature - 20.18).abs() < 0.01);
+        assert!((measurement.humidity - 48.32).abs() < 0.01);
+        i2c.done();
+    }
+
+    #[test]
+    fn single_measurement_low_repeatability() {
+        let expectations = [
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(
+                DEFAULT_I2C_ADDRESS,
+                MEASUREMENT_LOW_REPEATIBILITY_COMMAND.to_vec(),
+            ),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x5f, 0x58].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x38].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7b, 0xb2].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7d].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        device.repeatability = Repeatability::Low;
+        let measurement = device.single_measurement().unwrap();
+        assert!((measurement.temperature - 20.18).abs() < 0.01);
+        assert!((measurement.humidity - 48.32).abs() < 0.01);
+        i2c.done();
+    }
+
+    #[test]
+    fn single_measurement_medium_repeatability() {
+        let expectations = [
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(
+                DEFAULT_I2C_ADDRESS,
+                MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND.to_vec(),
+            ),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x71, 0x17].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x9a].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0xcb, 0x91].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x39].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        let measurement = device.single_measurement().unwrap();
+        assert!((measurement.temperature - 32.31).abs() < 0.01);
+        assert!((measurement.humidity - 79.52).abs() < 0.01);
+        i2c.done();
+    }
+}
