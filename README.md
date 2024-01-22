@@ -35,6 +35,8 @@ for pausibility checks.
 - [x] Disable the internal heater.
 - [x] Perform a single-shot measurement of temperature and relative humidity.
 - [x] Do a sofware set.
+- [x] Convert temperatures between °C and °F.
+- [x] Calculate the absolute humidity from a measurement.
 - [ ] Perform periodic measurement of temperature and relative humidity.
 - [ ] Include a no floating-point variant for systems without fpu.
 

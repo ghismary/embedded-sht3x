@@ -6,6 +6,8 @@ use bitflags::bitflags;
 use core::fmt::Display;
 use crc::{Crc, CRC_8_NRSC_5};
 use embedded_hal::i2c::{Operation, SevenBitAddress};
+#[allow(unused_imports)]
+use micromath::F32Ext;
 
 /// The I2C address when the ADDR pin is connected to logic low
 pub const I2C_ADDRESS_LOGIC_LOW: SevenBitAddress = 0x44;
@@ -140,6 +142,8 @@ pub struct Measurement {
     pub humidity: f32,
     /// The measured temperature (either in °C or °F according to the configuration of the device)
     pub temperature: f32,
+    /// The temperature unit used for the measurement
+    pub unit: TemperatureUnit,
 }
 
 /// SHT3x device driver
@@ -228,6 +232,7 @@ where
                 TemperatureUnit::Farenheit => ((temperature as f32 * 315.0) / 65535.0) - 49.0,
             },
             humidity: (humidity as f32 * 100.0) / 65535.0,
+            unit: self.unit,
         })
     }
 
@@ -270,11 +275,72 @@ where
     }
 }
 
+/// Converts a relative humidity value in % to an absolute humidity value in g/m³,
+/// temperature being in °C.
+pub fn calculate_absolute_humidity(measurement: Measurement) -> f32 {
+    let temperature = match measurement.unit {
+        TemperatureUnit::Celcius => measurement.temperature,
+        TemperatureUnit::Farenheit => convert_farenheit_to_celcius(measurement.temperature),
+    };
+    (6.112 * ((17.67 * temperature) / (temperature + 243.5)).exp() * measurement.humidity * 2.1674)
+        / (273.15 + temperature)
+}
+
+/// Converts a temperature in °C to °F.
+pub fn convert_celcius_to_farenheit(temperature: f32) -> f32 {
+    temperature * 1.8 + 32.0
+}
+
+/// Converts a temperature in °F to °C.
+pub fn convert_farenheit_to_celcius(temperature: f32) -> f32 {
+    (temperature - 32.0) * 0.55555
+}
+
 #[cfg(test)]
 mod tests {
     use crate::*;
     use embedded_hal_mock::eh1::delay::StdSleep as Delay;
     use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
+
+    #[test]
+    fn calculate_absolute_humidity() {
+        assert!(
+            (crate::calculate_absolute_humidity(Measurement {
+                humidity: 45.59,
+                temperature: 21.18,
+                unit: TemperatureUnit::Celcius
+            }) - 8.43)
+                .abs()
+                < 0.01
+        );
+        assert!(
+            (crate::calculate_absolute_humidity(Measurement {
+                humidity: 45.59,
+                temperature: 70.12,
+                unit: TemperatureUnit::Farenheit
+            }) - 8.43)
+                .abs()
+                < 0.01
+        );
+        assert!(
+            (crate::calculate_absolute_humidity(Measurement {
+                humidity: 34.71,
+                temperature: 2.93,
+                unit: TemperatureUnit::Celcius
+            }) - 2.06)
+                .abs()
+                < 0.01
+        );
+        assert!(
+            (crate::calculate_absolute_humidity(Measurement {
+                humidity: 74.91,
+                temperature: 107.7,
+                unit: TemperatureUnit::Farenheit
+            }) - 42.49)
+                .abs()
+                < 0.01
+        );
+    }
 
     #[test]
     fn clear_status() {
@@ -298,6 +364,22 @@ mod tests {
         assert!(!status.contains(Status::HEATER));
         assert!(!status.contains(Status::ALERT_PENDING));
         i2c.done();
+    }
+
+    #[test]
+    fn convert_celcius_to_farenheit() {
+        assert!((crate::convert_celcius_to_farenheit(0.0) - 32.0).abs() < 0.01);
+        assert!((crate::convert_celcius_to_farenheit(15.73) - 60.31).abs() < 0.01);
+        assert!((crate::convert_celcius_to_farenheit(-7.49) - 18.52).abs() < 0.01);
+        assert!((crate::convert_celcius_to_farenheit(37.5) - 99.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn convert_farenheit_to_celcius() {
+        assert!((crate::convert_farenheit_to_celcius(32.0) - 0.0).abs() < 0.01);
+        assert!((crate::convert_farenheit_to_celcius(60.31) - 15.73).abs() < 0.01);
+        assert!((crate::convert_farenheit_to_celcius(18.52) - -7.49).abs() < 0.01);
+        assert!((crate::convert_farenheit_to_celcius(99.5) - 37.5).abs() < 0.01);
     }
 
     #[test]
