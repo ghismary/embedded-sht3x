@@ -193,8 +193,8 @@ where
             Operation::Read(&mut status_crc),
         ];
         self.i2c.transaction(self.address, &mut operations)?;
-        self.check_crc(&status, status_crc[0])?;
-        Ok(Status::from_bits_retain(self.get_u16_value(&status)))
+        Self::check_crc(&status, status_crc[0])?;
+        Ok(Status::from_bits_retain(Self::get_u16_value(&status)))
     }
 
     /// Perform a single-shot measurement
@@ -221,10 +221,10 @@ where
             Operation::Read(&mut humidity_crc),
         ];
         self.i2c.transaction(self.address, &mut operations)?;
-        self.check_crc(&temperature, temperature_crc[0])?;
-        self.check_crc(&humidity, humidity_crc[0])?;
-        let temperature = self.get_u16_value(&temperature);
-        let humidity = self.get_u16_value(&humidity);
+        Self::check_crc(&temperature, temperature_crc[0])?;
+        Self::check_crc(&humidity, humidity_crc[0])?;
+        let temperature = Self::get_u16_value(&temperature);
+        let humidity = Self::get_u16_value(&humidity);
 
         Ok(Measurement {
             temperature: match self.unit {
@@ -255,22 +255,23 @@ where
         Ok(())
     }
 
-    fn calc_crc(&self, data: &[u8; 2]) -> u8 {
+    fn calc_crc(data: &[u8; 2]) -> u8 {
         let crc = Crc::<u8>::new(&CRC_8_NRSC_5);
         let mut digest = crc.digest();
         digest.update(data);
         digest.finalize()
     }
 
-    fn check_crc(&self, data: &[u8; 2], expected_crc: u8) -> Result<(), Error<I2C::Error>> {
-        if self.calc_crc(data) != expected_crc {
+    fn check_crc(data: &[u8; 2], expected_crc: u8) -> Result<(), Error<I2C::Error>> {
+        if Self::calc_crc(data) != expected_crc {
             Err(Error::BadCrc)
         } else {
             Ok(())
         }
     }
 
-    fn get_u16_value(&self, data: &[u8; 2]) -> u16 {
+    #[inline]
+    fn get_u16_value(data: &[u8; 2]) -> u16 {
         (data[0] as u16) << 8 | (data[1] as u16)
     }
 }
