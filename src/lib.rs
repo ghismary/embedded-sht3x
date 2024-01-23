@@ -135,7 +135,7 @@ pub enum TemperatureUnit {
 
 /// The result of a measurement.
 ///
-/// Such a measurement can be obtained using [`Sht3x<I2C, D>::single_measurement()`].
+/// Such a measurement can be obtained using [`Sht3x::single_measurement()`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Measurement {
     /// The measured relative humidity (in %).
