@@ -1,7 +1,7 @@
 use embedded_sht3x::{Repeatability::High, Sht3x, DEFAULT_I2C_ADDRESS};
 use linux_embedded_hal as hal;
 
-fn main() -> Result<(), embedded_sht3x::Error<linux_embedded_hal::I2CError>> {
+fn main() -> Result<(), embedded_sht3x::Error<hal::I2CError>> {
     // Create the I2C device from the chosen embedded-hal implementation,
     // in this case linux-embedded-hal
     let i2c = match hal::I2cdev::new("/dev/i2c-1") {
