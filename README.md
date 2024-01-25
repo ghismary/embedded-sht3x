@@ -1,3 +1,9 @@
+[![crates.io](https://img.shields.io/crates/v/embedded-sht3x.svg)](https://crates.io/crates/embedded-sht3x)
+[![License](https://img.shields.io/crates/l/embedded-sht3x.svg)](https://crates.io/crates/embedded-sht3x)
+[![Documentation](https://docs.rs/embedded-sht3x/badge.svg)](https://docs.rs/embedded-sht3x)
+
+# embedded-sht3x
+
 This is a platform agnostic Rust driver the SHT3x (SHT30, SHT31 and SHT35) digital
 humidity and temperature sensors using the [`embedded-hal`] traits.
 

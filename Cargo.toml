@@ -5,6 +5,7 @@ authors = ["Ghislain MARY <ghislain@ghislainmary.fr>"]
 repository = "https://gitlab.com/ghislainmary/embedded-sht3x"
 license = "MIT OR Apache-2.0"
 description = " Platform-agnostic Rust driver for the SHT3x temperature and humidity sensors."
+documentation = "https://docs.rs/embedded-sht3x/"
 readme = "README.md"
 keywords = ["temperature", "humidity", "sensor", "sht3x", "embedded-hal"]
 categories = ["embedded", "hardware-support", "no-std"]
