@@ -185,16 +185,16 @@ where
 
     /// Get the current status of the sensor
     pub fn get_status(&mut self) -> Result<Status, Error<I2C::Error>> {
-        let mut status = [0u8; 2];
-        let mut status_crc = [0u8; 1];
+        let mut data = [0u8; 3];
         let mut operations = [
             Operation::Write(GET_STATUS_COMMAND),
-            Operation::Read(&mut status),
-            Operation::Read(&mut status_crc),
+            Operation::Read(&mut data),
         ];
         self.i2c.transaction(self.address, &mut operations)?;
-        Self::check_crc(&status, status_crc[0])?;
-        Ok(Status::from_bits_retain(Self::get_u16_value(&status)))
+        let status: &[u8; 2] = &data[0..2].try_into().unwrap();
+        let status_crc = data[2];
+        Self::check_crc(status, status_crc)?;
+        Ok(Status::from_bits_retain(Self::get_u16_value(status)))
     }
 
     /// Perform a single-shot measurement
@@ -209,22 +209,17 @@ where
             Repeatability::Medium => MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND,
             Repeatability::Low => MEASUREMENT_LOW_REPEATIBILITY_COMMAND,
         };
-        let mut temperature = [0u8; 2];
-        let mut humidity = [0u8; 2];
-        let mut temperature_crc = [0u8; 1];
-        let mut humidity_crc = [0u8; 1];
-        let mut operations = [
-            Operation::Write(command),
-            Operation::Read(&mut temperature),
-            Operation::Read(&mut temperature_crc),
-            Operation::Read(&mut humidity),
-            Operation::Read(&mut humidity_crc),
-        ];
+        let mut data = [0u8; 6];
+        let mut operations = [Operation::Write(command), Operation::Read(&mut data)];
         self.i2c.transaction(self.address, &mut operations)?;
-        Self::check_crc(&temperature, temperature_crc[0])?;
-        Self::check_crc(&humidity, humidity_crc[0])?;
-        let temperature = Self::get_u16_value(&temperature);
-        let humidity = Self::get_u16_value(&humidity);
+        let temperature: &[u8; 2] = &data[0..2].try_into().unwrap();
+        let temperature_crc = data[2];
+        let humidity: &[u8; 2] = &data[3..5].try_into().unwrap();
+        let humidity_crc = data[5];
+        Self::check_crc(temperature, temperature_crc)?;
+        Self::check_crc(humidity, humidity_crc)?;
+        let temperature = Self::get_u16_value(temperature);
+        let humidity = Self::get_u16_value(humidity);
 
         Ok(Measurement {
             temperature: match self.unit {
@@ -349,8 +344,7 @@ mod tests {
             I2cTransaction::write(DEFAULT_I2C_ADDRESS, CLEAR_STATUS_COMMAND.to_vec()),
             I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
             I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x81].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00, 0x81].to_vec()),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
         let mut i2c = I2cMock::new(&expectations);
@@ -388,8 +382,7 @@ mod tests {
         let expectations = [
             I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
             I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x81].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00, 0x81].to_vec()),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
         let mut i2c = I2cMock::new(&expectations);
@@ -411,14 +404,12 @@ mod tests {
             I2cTransaction::write(DEFAULT_I2C_ADDRESS, ENABLE_HEATER_COMMAND.to_vec()),
             I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
             I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x20, 0x03].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x0e].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x20, 0x03, 0x0e].to_vec()),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
             I2cTransaction::write(DEFAULT_I2C_ADDRESS, DISABLE_HEATER_COMMAND.to_vec()),
             I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
             I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x03].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0xd2].to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x03, 0xd2].to_vec()),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
         let mut i2c = I2cMock::new(&expectations);
@@ -464,10 +455,10 @@ mod tests {
                 DEFAULT_I2C_ADDRESS,
                 MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND.to_vec(),
             ),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x71, 0x17].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x9a].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0xcb, 0x91].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x39].to_vec()),
+            I2cTransaction::read(
+                DEFAULT_I2C_ADDRESS,
+                [0x71, 0x17, 0x9a, 0xcb, 0x91, 0x39].to_vec(),
+            ),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
         let mut i2c = I2cMock::new(&expectations);
@@ -487,10 +478,10 @@ mod tests {
                 DEFAULT_I2C_ADDRESS,
                 MEASUREMENT_HIGH_REPEATIBILITY_COMMAND.to_vec(),
             ),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x5f, 0x58].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x38].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7b, 0xb2].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7d].to_vec()),
+            I2cTransaction::read(
+                DEFAULT_I2C_ADDRESS,
+                [0x5f, 0x58, 0x38, 0x7b, 0xb2, 0x7d].to_vec(),
+            ),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
         let mut i2c = I2cMock::new(&expectations);
@@ -510,10 +501,10 @@ mod tests {
                 DEFAULT_I2C_ADDRESS,
                 MEASUREMENT_LOW_REPEATIBILITY_COMMAND.to_vec(),
             ),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x5f, 0x58].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x38].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7b, 0xb2].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x7d].to_vec()),
+            I2cTransaction::read(
+                DEFAULT_I2C_ADDRESS,
+                [0x5f, 0x58, 0x38, 0x7b, 0xb2, 0x7d].to_vec(),
+            ),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
         let mut i2c = I2cMock::new(&expectations);
@@ -533,10 +524,10 @@ mod tests {
                 DEFAULT_I2C_ADDRESS,
                 MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND.to_vec(),
             ),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x71, 0x17].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x9a].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0xcb, 0x91].to_vec()),
-            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x39].to_vec()),
+            I2cTransaction::read(
+                DEFAULT_I2C_ADDRESS,
+                [0x71, 0x17, 0x9a, 0xcb, 0x91, 0x39].to_vec(),
+            ),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
         let mut i2c = I2cMock::new(&expectations);
