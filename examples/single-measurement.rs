@@ -24,7 +24,8 @@ fn main() -> Result<(), embedded_sht3x::Error<hal::I2CError>> {
     let measurement = sensor.single_measurement()?;
     println!(
         "Temperature: {:.2} °C, Relative humidity: {:.2} %",
-        measurement.temperature, measurement.humidity
+        measurement.temperature.celcius(),
+        measurement.relative_humidity
     );
     Ok(())
 }

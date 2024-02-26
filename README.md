@@ -9,6 +9,10 @@ humidity and temperature sensors using the [`embedded-hal`] traits.
 
 [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
 
+This driver can be used both synchronously or asynchronously. It defaults to the
+synchronous implementation, but you can switch to the asynchronous one by using
+the `async` feature.
+
 ## The device
 
 The sensors of the SHT3x family are humidity and temperature sensors,
@@ -78,7 +82,8 @@ fn main() -> Result<(), embedded_sht3x::Error<hal::I2CError>> {
     let measurement = sensor.single_measurement()?;
     println!(
         "Temperature: {:.2} °C, Relative humidity: {:.2} %",
-        measurement.temperature, measurement.humidity
+        measurement.temperature.celcius(),
+        measurement.relative_humidity
     );
     Ok(())
 }

@@ -5,9 +5,14 @@
 use bitflags::bitflags;
 use core::fmt::Display;
 use crc::{Crc, CRC_8_NRSC_5};
-use embedded_hal::i2c::{Operation, SevenBitAddress};
-#[allow(unused_imports)]
-use micromath::F32Ext;
+use weather_utils::{unit::Celcius, TemperatureAndRelativeHumidity};
+
+#[cfg(not(feature = "async"))]
+use embedded_hal as hal;
+#[cfg(feature = "async")]
+use embedded_hal_async as hal;
+
+use hal::i2c::{Operation, SevenBitAddress};
 
 /// The I2C address when the ADDR pin is connected to logic low
 pub const I2C_ADDRESS_LOGIC_LOW: SevenBitAddress = 0x44;
@@ -29,7 +34,7 @@ const RESET_COMMAND: &[u8] = &[0x30, 0xa2];
 #[derive(Debug)]
 pub enum Error<I2cE>
 where
-    I2cE: embedded_hal::i2c::Error,
+    I2cE: hal::i2c::Error,
 {
     /// I²C bus error
     I2c(I2cE),
@@ -39,7 +44,7 @@ where
 
 impl<I2cE> From<I2cE> for Error<I2cE>
 where
-    I2cE: embedded_hal::i2c::Error,
+    I2cE: hal::i2c::Error,
 {
     fn from(value: I2cE) -> Self {
         Error::I2c(value)
@@ -123,27 +128,16 @@ impl Display for Status {
     }
 }
 
-/// The temperature unit to use in the measurements.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub enum TemperatureUnit {
-    #[default]
-    /// Temperature in °C.
-    Celcius,
-    /// Temperature in °F.
-    Farenheit,
+#[derive(Clone, Copy, Debug, Default)]
+struct SensorMeasurement {
+    humidity: f32,
+    temperature: f32,
 }
 
-/// The result of a measurement.
-///
-/// Such a measurement can be obtained using [`Sht3x::single_measurement()`].
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Measurement {
-    /// The measured relative humidity (in %).
-    pub humidity: f32,
-    /// The measured temperature (either in °C or °F according to the configuration of the device)
-    pub temperature: f32,
-    /// The temperature unit used for the measurement
-    pub unit: TemperatureUnit,
+impl From<SensorMeasurement> for TemperatureAndRelativeHumidity<Celcius> {
+    fn from(value: SensorMeasurement) -> Self {
+        TemperatureAndRelativeHumidity::<Celcius>::new(value.temperature, value.humidity)
+    }
 }
 
 /// SHT3x device driver
@@ -154,43 +148,57 @@ pub struct Sht3x<I2C, D> {
     i2c: I2C,
     /// The repeatability to use for measurements (defaults to medium).
     pub repeatability: Repeatability,
-    /// The temperature unit to use for measurements (defaults to celcius).
-    pub unit: TemperatureUnit,
 }
 
 impl<I2C, D> Sht3x<I2C, D>
 where
-    I2C: embedded_hal::i2c::I2c,
-    D: embedded_hal::delay::DelayNs,
+    I2C: hal::i2c::I2c,
+    D: hal::delay::DelayNs,
 {
     /// Clear the status of the sensor.
     ///
     /// All the flags of the status register will be cleared (set to zero).
-    pub fn clear_status(&mut self) -> Result<(), Error<I2C::Error>> {
-        self.i2c.write(self.address, CLEAR_STATUS_COMMAND)?;
+    #[maybe_async_cfg::maybe(
+        sync(not(feature = "async"), keep_self),
+        async(feature = "async", keep_self)
+    )]
+    pub async fn clear_status(&mut self) -> Result<(), Error<I2C::Error>> {
+        self.i2c.write(self.address, CLEAR_STATUS_COMMAND).await?;
         Ok(())
     }
 
     /// Deactivate the internal heater.
-    pub fn disable_heater(&mut self) -> Result<(), Error<I2C::Error>> {
-        self.i2c.write(self.address, DISABLE_HEATER_COMMAND)?;
+    #[maybe_async_cfg::maybe(
+        sync(not(feature = "async"), keep_self),
+        async(feature = "async", keep_self)
+    )]
+    pub async fn disable_heater(&mut self) -> Result<(), Error<I2C::Error>> {
+        self.i2c.write(self.address, DISABLE_HEATER_COMMAND).await?;
         Ok(())
     }
 
     /// Activate the internal heater.
-    pub fn enable_heater(&mut self) -> Result<(), Error<I2C::Error>> {
-        self.i2c.write(self.address, ENABLE_HEATER_COMMAND)?;
+    #[maybe_async_cfg::maybe(
+        sync(not(feature = "async"), keep_self),
+        async(feature = "async", keep_self)
+    )]
+    pub async fn enable_heater(&mut self) -> Result<(), Error<I2C::Error>> {
+        self.i2c.write(self.address, ENABLE_HEATER_COMMAND).await?;
         Ok(())
     }
 
     /// Get the current status of the sensor
-    pub fn get_status(&mut self) -> Result<Status, Error<I2C::Error>> {
+    #[maybe_async_cfg::maybe(
+        sync(not(feature = "async"), keep_self),
+        async(feature = "async", keep_self)
+    )]
+    pub async fn get_status(&mut self) -> Result<Status, Error<I2C::Error>> {
         let mut data = [0u8; 3];
         let mut operations = [
             Operation::Write(GET_STATUS_COMMAND),
             Operation::Read(&mut data),
         ];
-        self.i2c.transaction(self.address, &mut operations)?;
+        self.i2c.transaction(self.address, &mut operations).await?;
         let status: &[u8; 2] = &data[0..2].try_into().unwrap();
         let status_crc = data[2];
         Self::check_crc(status, status_crc)?;
@@ -201,9 +209,15 @@ where
     ///
     /// This driver uses clock stretching so the result of the measurement is returned
     /// as soon as the data is available after the measurement command has been sent to the sensor.
-    /// Therefore this call will block for a least 4 ms and at most 15.5 ms depending on the chosen
+    /// Therefore this call will take at least 4 ms and at most 15.5 ms depending on the chosen
     /// repeatability and the supply voltage of the sensor.
-    pub fn single_measurement(&mut self) -> Result<Measurement, Error<I2C::Error>> {
+    #[maybe_async_cfg::maybe(
+        sync(not(feature = "async"), keep_self),
+        async(feature = "async", keep_self)
+    )]
+    pub async fn single_measurement(
+        &mut self,
+    ) -> Result<TemperatureAndRelativeHumidity<Celcius>, Error<I2C::Error>> {
         let command = match self.repeatability {
             Repeatability::High => MEASUREMENT_HIGH_REPEATIBILITY_COMMAND,
             Repeatability::Medium => MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND,
@@ -211,7 +225,7 @@ where
         };
         let mut data = [0u8; 6];
         let mut operations = [Operation::Write(command), Operation::Read(&mut data)];
-        self.i2c.transaction(self.address, &mut operations)?;
+        self.i2c.transaction(self.address, &mut operations).await?;
         let temperature: &[u8; 2] = &data[0..2].try_into().unwrap();
         let temperature_crc = data[2];
         let humidity: &[u8; 2] = &data[3..5].try_into().unwrap();
@@ -221,14 +235,11 @@ where
         let temperature = Self::get_u16_value(temperature);
         let humidity = Self::get_u16_value(humidity);
 
-        Ok(Measurement {
-            temperature: match self.unit {
-                TemperatureUnit::Celcius => ((temperature as f32 * 175.0) / 65535.0) - 45.0,
-                TemperatureUnit::Farenheit => ((temperature as f32 * 315.0) / 65535.0) - 49.0,
-            },
+        let measurement = SensorMeasurement {
+            temperature: ((temperature as f32 * 175.0) / 65535.0) - 45.0,
             humidity: (humidity as f32 * 100.0) / 65535.0,
-            unit: self.unit,
-        })
+        };
+        Ok(measurement.into())
     }
 
     /// Create a new instance of the SHT3x device.
@@ -238,15 +249,18 @@ where
             delay,
             i2c,
             repeatability: Repeatability::Medium,
-            unit: TemperatureUnit::Celcius,
         }
     }
 
     /// Perform a soft reset to force the system into a well-defined state without removing
     /// the power supply.
-    pub fn reset(&mut self) -> Result<(), Error<I2C::Error>> {
-        self.i2c.write(self.address, RESET_COMMAND)?;
-        self.delay.delay_us(1500); // Wait for the sensor to enter idle state
+    #[maybe_async_cfg::maybe(
+        sync(not(feature = "async"), keep_self),
+        async(feature = "async", keep_self)
+    )]
+    pub async fn reset(&mut self) -> Result<(), Error<I2C::Error>> {
+        self.i2c.write(self.address, RESET_COMMAND).await?;
+        self.delay.delay_us(1500).await; // Wait for the sensor to enter idle state
         Ok(())
     }
 
@@ -271,72 +285,11 @@ where
     }
 }
 
-/// Converts a relative humidity value in % to an absolute humidity value in g/m³,
-/// temperature being in °C.
-pub fn calculate_absolute_humidity(measurement: Measurement) -> f32 {
-    let temperature = match measurement.unit {
-        TemperatureUnit::Celcius => measurement.temperature,
-        TemperatureUnit::Farenheit => convert_farenheit_to_celcius(measurement.temperature),
-    };
-    (6.112 * ((17.67 * temperature) / (temperature + 243.5)).exp() * measurement.humidity * 2.1674)
-        / (273.15 + temperature)
-}
-
-/// Converts a temperature in °C to °F.
-pub fn convert_celcius_to_farenheit(temperature: f32) -> f32 {
-    temperature * 1.8 + 32.0
-}
-
-/// Converts a temperature in °F to °C.
-pub fn convert_farenheit_to_celcius(temperature: f32) -> f32 {
-    (temperature - 32.0) * 0.55555
-}
-
 #[cfg(test)]
 mod tests {
     use crate::*;
     use embedded_hal_mock::eh1::delay::StdSleep as Delay;
     use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
-
-    #[test]
-    fn calculate_absolute_humidity() {
-        assert!(
-            (crate::calculate_absolute_humidity(Measurement {
-                humidity: 45.59,
-                temperature: 21.18,
-                unit: TemperatureUnit::Celcius
-            }) - 8.43)
-                .abs()
-                < 0.01
-        );
-        assert!(
-            (crate::calculate_absolute_humidity(Measurement {
-                humidity: 45.59,
-                temperature: 70.12,
-                unit: TemperatureUnit::Farenheit
-            }) - 8.43)
-                .abs()
-                < 0.01
-        );
-        assert!(
-            (crate::calculate_absolute_humidity(Measurement {
-                humidity: 34.71,
-                temperature: 2.93,
-                unit: TemperatureUnit::Celcius
-            }) - 2.06)
-                .abs()
-                < 0.01
-        );
-        assert!(
-            (crate::calculate_absolute_humidity(Measurement {
-                humidity: 74.91,
-                temperature: 107.7,
-                unit: TemperatureUnit::Farenheit
-            }) - 42.49)
-                .abs()
-                < 0.01
-        );
-    }
 
     #[test]
     fn clear_status() {
@@ -359,22 +312,6 @@ mod tests {
         assert!(!status.contains(Status::HEATER));
         assert!(!status.contains(Status::ALERT_PENDING));
         i2c.done();
-    }
-
-    #[test]
-    fn convert_celcius_to_farenheit() {
-        assert!((crate::convert_celcius_to_farenheit(0.0) - 32.0).abs() < 0.01);
-        assert!((crate::convert_celcius_to_farenheit(15.73) - 60.31).abs() < 0.01);
-        assert!((crate::convert_celcius_to_farenheit(-7.49) - 18.52).abs() < 0.01);
-        assert!((crate::convert_celcius_to_farenheit(37.5) - 99.5).abs() < 0.01);
-    }
-
-    #[test]
-    fn convert_farenheit_to_celcius() {
-        assert!((crate::convert_farenheit_to_celcius(32.0) - 0.0).abs() < 0.01);
-        assert!((crate::convert_farenheit_to_celcius(60.31) - 15.73).abs() < 0.01);
-        assert!((crate::convert_farenheit_to_celcius(18.52) - -7.49).abs() < 0.01);
-        assert!((crate::convert_farenheit_to_celcius(99.5) - 37.5).abs() < 0.01);
     }
 
     #[test]
@@ -448,29 +385,6 @@ mod tests {
     }
 
     #[test]
-    fn single_measurement_farenheit() {
-        let expectations = [
-            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
-            I2cTransaction::write(
-                DEFAULT_I2C_ADDRESS,
-                MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND.to_vec(),
-            ),
-            I2cTransaction::read(
-                DEFAULT_I2C_ADDRESS,
-                [0x71, 0x17, 0x9a, 0xcb, 0x91, 0x39].to_vec(),
-            ),
-            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
-        ];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
-        device.unit = TemperatureUnit::Farenheit;
-        let measurement = device.single_measurement().unwrap();
-        assert!((measurement.temperature - 90.16).abs() < 0.01);
-        assert!((measurement.humidity - 79.52).abs() < 0.01);
-        i2c.done();
-    }
-
-    #[test]
     fn single_measurement_high_repeatability() {
         let expectations = [
             I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
@@ -488,8 +402,8 @@ mod tests {
         let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
         device.repeatability = Repeatability::High;
         let measurement = device.single_measurement().unwrap();
-        assert!((measurement.temperature - 20.18).abs() < 0.01);
-        assert!((measurement.humidity - 48.32).abs() < 0.01);
+        assert!((measurement.temperature.celcius() - 20.18).abs() < 0.01);
+        assert!((measurement.relative_humidity - 48.32).abs() < 0.01);
         i2c.done();
     }
 
@@ -511,8 +425,8 @@ mod tests {
         let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
         device.repeatability = Repeatability::Low;
         let measurement = device.single_measurement().unwrap();
-        assert!((measurement.temperature - 20.18).abs() < 0.01);
-        assert!((measurement.humidity - 48.32).abs() < 0.01);
+        assert!((measurement.temperature.celcius() - 20.18).abs() < 0.01);
+        assert!((measurement.relative_humidity - 48.32).abs() < 0.01);
         i2c.done();
     }
 
@@ -533,8 +447,8 @@ mod tests {
         let mut i2c = I2cMock::new(&expectations);
         let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
         let measurement = device.single_measurement().unwrap();
-        assert!((measurement.temperature - 32.31).abs() < 0.01);
-        assert!((measurement.humidity - 79.52).abs() < 0.01);
+        assert!((measurement.temperature.celcius() - 32.31).abs() < 0.01);
+        assert!((measurement.relative_humidity - 79.52).abs() < 0.01);
         i2c.done();
     }
 }
