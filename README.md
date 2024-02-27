@@ -5,9 +5,11 @@
 # embedded-sht3x
 
 This is a platform agnostic Rust driver the SHT3x (SHT30, SHT31 and SHT35) digital
-humidity and temperature sensors using the [`embedded-hal`] traits.
+humidity and temperature sensors using the [`embedded-hal`] and
+[`embedded-hal-async`] traits.
 
 [`embedded-hal`]: https://github.com/rust-embedded/embedded-hal
+[`embedded-hal-async`]: https://github.com/rust-embedded/embedded-hal
 
 This driver can be used both synchronously or asynchronously. It defaults to the
 synchronous implementation, but you can switch to the asynchronous one by using
@@ -53,7 +55,7 @@ for pausibility checks.
 ## Usage
 
 To use this driver, import what you need from this crate and an `embedded-hal`
-implentation, then instatiate the device.
+implementation, then instantiate the device.
 
 ```rust,no_run
 use embedded_sht3x::{Repeatability::High, Sht3x, DEFAULT_I2C_ADDRESS};
