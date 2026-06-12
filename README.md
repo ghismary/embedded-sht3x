@@ -1,4 +1,6 @@
 [![crates.io](https://img.shields.io/crates/v/embedded-sht3x.svg)](https://crates.io/crates/embedded-sht3x)
+[![Github status](https://github.com/ghismary/embedded-sht3x/actions/workflosw/general.yml/badge.svg)](https://github.com/ghismary/embedded-sht3x)
+[![codecov](https://codecov.io/gh/ghismary/embedded-sht3x/graph/badge.svg?token=q9CQS0eM3c)](https://codecov.io/gh/ghismary/embedded-sht3x)
 [![License](https://img.shields.io/crates/l/embedded-sht3x.svg)](https://crates.io/crates/embedded-sht3x)
 [![Documentation](https://docs.rs/embedded-sht3x/badge.svg)](https://docs.rs/embedded-sht3x)
 
