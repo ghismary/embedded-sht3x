@@ -5,7 +5,6 @@
 use bitflags::bitflags;
 use core::fmt::Display;
 use crc::{Crc, CRC_8_NRSC_5};
-use weather_utils::{unit::Celcius, TemperatureAndRelativeHumidity};
 
 #[cfg(not(feature = "async"))]
 use embedded_hal as hal;
@@ -13,6 +12,9 @@ use embedded_hal as hal;
 use embedded_hal_async as hal;
 
 use hal::i2c::{Operation, SevenBitAddress};
+
+pub use weather_utils::Temperature;
+use weather_utils::{Celsius, RelativeHumidity, TemperatureAndRelativeHumidity};
 
 /// The I2C address when the ADDR pin is connected to logic low
 pub const I2C_ADDRESS_LOGIC_LOW: SevenBitAddress = 0x44;
@@ -51,10 +53,10 @@ where
     }
 }
 
-/// The repeatability influences the measument duration and the energy consumption of the sensor
+/// The repeatability influences the measurement duration and the energy consumption of the sensor
 /// It also gives a more or less accurate measurement
 ///
-/// Here are the repeatibility values for humidity and temperature:
+/// Here are the repeatability values for humidity and temperature:
 ///  - Low repeatability: 0.21 %RH - 0.15 °C
 ///  - Medium repeatability: 0.15 %RH - 0.08 °C
 ///  - High repeatability: 0.08 %RH - 0.04 °C
@@ -134,9 +136,12 @@ struct SensorMeasurement {
     temperature: f32,
 }
 
-impl From<SensorMeasurement> for TemperatureAndRelativeHumidity<Celcius> {
+impl From<SensorMeasurement> for TemperatureAndRelativeHumidity<Celsius> {
     fn from(value: SensorMeasurement) -> Self {
-        TemperatureAndRelativeHumidity::<Celcius>::new(value.temperature, value.humidity)
+        TemperatureAndRelativeHumidity {
+            temperature: Celsius(value.temperature),
+            relative_humidity: RelativeHumidity::new(value.humidity).unwrap(),
+        }
     }
 }
 
@@ -217,7 +222,7 @@ where
     )]
     pub async fn single_measurement(
         &mut self,
-    ) -> Result<TemperatureAndRelativeHumidity<Celcius>, Error<I2C::Error>> {
+    ) -> Result<TemperatureAndRelativeHumidity<Celsius>, Error<I2C::Error>> {
         let command = match self.repeatability {
             Repeatability::High => MEASUREMENT_HIGH_REPEATIBILITY_COMMAND,
             Repeatability::Medium => MEASUREMENT_MEDIUM_REPEATIBILITY_COMMAND,
@@ -287,9 +292,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
     use embedded_hal_mock::eh1::delay::StdSleep as Delay;
     use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
+
+    use super::*;
 
     #[test]
     fn clear_status() {
@@ -402,8 +408,8 @@ mod tests {
         let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
         device.repeatability = Repeatability::High;
         let measurement = device.single_measurement().unwrap();
-        assert!((measurement.temperature.celcius() - 20.18).abs() < 0.01);
-        assert!((measurement.relative_humidity - 48.32).abs() < 0.01);
+        assert!((measurement.temperature.celsius().value() - 20.18).abs() < 0.01);
+        assert!((measurement.relative_humidity.value() - 48.32).abs() < 0.01);
         i2c.done();
     }
 
@@ -425,8 +431,8 @@ mod tests {
         let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
         device.repeatability = Repeatability::Low;
         let measurement = device.single_measurement().unwrap();
-        assert!((measurement.temperature.celcius() - 20.18).abs() < 0.01);
-        assert!((measurement.relative_humidity - 48.32).abs() < 0.01);
+        assert!((measurement.temperature.celsius().value() - 20.18).abs() < 0.01);
+        assert!((measurement.relative_humidity.value() - 48.32).abs() < 0.01);
         i2c.done();
     }
 
@@ -447,8 +453,8 @@ mod tests {
         let mut i2c = I2cMock::new(&expectations);
         let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
         let measurement = device.single_measurement().unwrap();
-        assert!((measurement.temperature.celcius() - 32.31).abs() < 0.01);
-        assert!((measurement.relative_humidity - 79.52).abs() < 0.01);
+        assert!((measurement.temperature.celsius().value() - 32.31).abs() < 0.01);
+        assert!((measurement.relative_humidity.value() - 79.52).abs() < 0.01);
         i2c.done();
     }
 }

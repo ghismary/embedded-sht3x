@@ -2,14 +2,14 @@
 name = "embedded-sht3x"
 version = "0.1.0"
 authors = ["Ghislain MARY <ghislain@ghislainmary.fr>"]
-repository = "https://gitlab.com/ghislainmary/embedded-sht3x"
+repository = "https://github.com/ghismary/embedded-sht3x"
 license = "MIT OR Apache-2.0"
 description = " Platform-agnostic Rust driver for the SHT3x temperature and humidity sensors."
 documentation = "https://docs.rs/embedded-sht3x/"
 readme = "README.md"
 keywords = ["temperature", "humidity", "sensor", "sht3x", "embedded-hal"]
 categories = ["embedded", "hardware-support", "no-std"]
-homepage = "https://gitlab.com/ghislainmary/embedded-sht3x"
+homepage = "https://github.com/ghismary/embedded-sht3x"
 include = ["/**/*.rs", "/Cargo.toml", "/README.md"]
 edition = "2021"
 
@@ -18,15 +18,15 @@ default = []
 async = []
 
 [dependencies]
-bitflags = "2.4.2"
-crc = "3.0.1"
-embedded-hal = "1.0.0"
-embedded-hal-async = "1.0.0"
-maybe-async-cfg = "0.2.3"
-weather-utils = { version = "0.2.0", features = ["no-std"] }
+bitflags = "2.13"
+crc = "3.4"
+embedded-hal = "1.0"
+embedded-hal-async = "1.0"
+maybe-async-cfg = "0.2"
+weather-utils = { version = "0.5", features = ["no-std"] }
 
 [dev-dependencies]
-embedded-hal-mock = { version = "0.10.0", default-features = false, features = [
+embedded-hal-mock = { version = "0.11", default-features = false, features = [
     "eh1",
 ] }
 linux-embedded-hal = "0.4.0"
