@@ -30,13 +30,11 @@ The typical accuracies are the following:
 
 The SHT3x is equipped with an internal heater which can increase the
 temperature in the range of a few degrees centigrade, and that is useful
-for pausibility checks.
+for plausibility checks.
 
 ### Documentation:
 
 - [Datasheet](https://sensirion.com/media/documents/213E6A3B/63A5A569/Datasheet_SHT3x_DIS.pdf)
-- [Introduction to humidity](https://www.sensirion.com/media/documents/8AB2AD38/61642ADD/Sensirion_AppNotes_Humidity_Sensors_Introduction_to_Relative_Humidit.pdf)
-- [Humidity at a glance](https://www.sensirion.com/media/documents/A419127A/6163F5FE/Sensirion_AppNotes_Humidity_Sensors_at_a_Glance.pdf)
 - [Arduino driver](https://github.com/Sensirion/arduino-sht)
 
 ## Features
@@ -46,11 +44,10 @@ for pausibility checks.
 - [x] Enable the internal heater.
 - [x] Disable the internal heater.
 - [x] Perform a single-shot measurement of temperature and relative humidity.
-- [x] Do a sofware set.
+- [x] Do a software reset.
 - [x] Convert temperatures between °C and °F.
 - [x] Calculate the absolute humidity from a measurement.
 - [ ] Perform periodic measurement of temperature and relative humidity.
-- [ ] Include a no floating-point variant for systems without fpu.
 
 ## Usage
 
@@ -58,36 +55,45 @@ To use this driver, import what you need from this crate and an `embedded-hal`
 implementation, then instantiate the device.
 
 ```rust,no_run
-use embedded_sht3x::{Repeatability::High, Sht3x, DEFAULT_I2C_ADDRESS};
-use linux_embedded_hal as hal;
+#[cfg(target_os = "linux")]
+mod linux {
+    use embedded_sht3x::{Repeatability::High, Sht3x, Temperature, DEFAULT_I2C_ADDRESS};
+    use linux_embedded_hal as hal;
 
-fn main() -> Result<(), embedded_sht3x::Error<hal::I2CError>> {
-    // Create the I2C device from the chosen embedded-hal implementation,
-    // in this case linux-embedded-hal
-    let mut i2c = match hal::I2cdev::new("/dev/i2c-1") {
-        Err(err) => {
-            eprintln!("Could not create I2C device: {}", err);
+    pub fn main() -> Result<(), embedded_sht3x::Error<hal::I2CError>> {
+        // Create the I2C device from the chosen embedded-hal implementation,
+        // in this case linux-embedded-hal
+        let mut i2c = match hal::I2cdev::new("/dev/i2c-1") {
+            Err(err) => {
+                eprintln!("Could not create I2C device: {}", err);
+                std::process::exit(1);
+            }
+            Ok(i2c) => i2c,
+        };
+        if let Err(err) = i2c.set_slave_address(DEFAULT_I2C_ADDRESS as u16) {
+            eprintln!("Could not set I2C slave address: {}", err);
             std::process::exit(1);
         }
-        Ok(i2c) => i2c,
-    };
-    if let Err(err) = i2c.set_slave_address(DEFAULT_I2C_ADDRESS as u16) {
-        eprintln!("Could not set I2C slave address: {}", err);
-        std::process::exit(1);
+
+        // Create the sensor and configure its repeatability
+        let mut sensor = Sht3x::new(i2c, DEFAULT_I2C_ADDRESS, hal::Delay {});
+        sensor.repeatability = High;
+
+        // Perform a temperature and humidity measurement
+        let measurement = sensor.single_measurement()?;
+        println!(
+            "Temperature: {:.2} °C, Relative humidity: {:.2} %",
+            measurement.temperature.celsius().value(),
+            measurement.relative_humidity.value()
+        );
+        Ok(())
     }
-
-    // Create the sensor and configure its repeatability
-    let mut sensor = Sht3x::new(i2c, DEFAULT_I2C_ADDRESS, hal::Delay {});
-    sensor.repeatability = High;
-
-    // Perform a temperature and humidity measurement
-    let measurement = sensor.single_measurement()?;
-    println!(
-        "Temperature: {:.2} °C, Relative humidity: {:.2} %",
-        measurement.temperature.celcius(),
-        measurement.relative_humidity
-    );
-    Ok(())
+}
+fn main() {
+    #[cfg(target_os = "linux")]
+    linux::main();
+    #[cfg(not(target_os = "linux"))]
+    println!("This example only works on Linux");
 }
 ```
 

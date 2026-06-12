@@ -1,31 +1,49 @@
-use embedded_sht3x::{Repeatability::High, Sht3x, DEFAULT_I2C_ADDRESS};
-use linux_embedded_hal as hal;
+#[cfg(target_os = "linux")]
+mod linux {
+    use embedded_sht3x::{Repeatability::High, Sht3x, Temperature, DEFAULT_I2C_ADDRESS};
+    use linux_embedded_hal as hal;
 
-fn main() -> Result<(), embedded_sht3x::Error<hal::I2CError>> {
-    // Create the I2C device from the chosen embedded-hal implementation,
-    // in this case linux-embedded-hal
-    let mut i2c = match hal::I2cdev::new("/dev/i2c-1") {
-        Err(err) => {
-            eprintln!("Could not create I2C device: {}", err);
+    pub fn main() -> Result<(), embedded_sht3x::Error<hal::I2CError>> {
+        // Create the I2C device from the chosen embedded-hal implementation,
+        // in this case linux-embedded-hal
+        let mut i2c = match hal::I2cdev::new("/dev/i2c-1") {
+            Err(err) => {
+                eprintln!("Could not create I2C device: {}", err);
+                std::process::exit(1);
+            }
+            Ok(i2c) => i2c,
+        };
+        if let Err(err) = i2c.set_slave_address(DEFAULT_I2C_ADDRESS as u16) {
+            eprintln!("Could not set I2C slave address: {}", err);
             std::process::exit(1);
         }
-        Ok(i2c) => i2c,
-    };
-    if let Err(err) = i2c.set_slave_address(DEFAULT_I2C_ADDRESS as u16) {
-        eprintln!("Could not set I2C slave address: {}", err);
-        std::process::exit(1);
+
+        // Create the sensor and configure its repeatability
+        let mut sensor = Sht3x::new(i2c, DEFAULT_I2C_ADDRESS, hal::Delay {});
+        sensor.repeatability = High;
+
+        // Perform a temperature and humidity measurement
+        let measurement = sensor.single_measurement()?;
+        println!(
+            "Temperature: {:.2} °C, Relative humidity: {:.2} %, Absolute humidity: {:.2} g/m³",
+            measurement.temperature.celsius().value(),
+            measurement.relative_humidity.value(),
+            measurement.absolute_humidity()
+        );
+        let heat_index = measurement.heat_index();
+        println!(
+            "Dew point: {:.2} °C, Heat index: {:2} °C, Comfort: {:?}",
+            measurement.dew_point().celsius().value(),
+            heat_index.celsius().value(),
+            heat_index.comfort()
+        );
+        Ok(())
     }
+}
 
-    // Create the sensor and configure its repeatability
-    let mut sensor = Sht3x::new(i2c, DEFAULT_I2C_ADDRESS, hal::Delay {});
-    sensor.repeatability = High;
-
-    // Perform a temperature and humidity measurement
-    let measurement = sensor.single_measurement()?;
-    println!(
-        "Temperature: {:.2} °C, Relative humidity: {:.2} %",
-        measurement.temperature.celcius(),
-        measurement.relative_humidity
-    );
-    Ok(())
+fn main() {
+    #[cfg(target_os = "linux")]
+    linux::main();
+    #[cfg(not(target_os = "linux"))]
+    println!("This example only works on Linux");
 }
