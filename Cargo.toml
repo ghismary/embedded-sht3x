@@ -29,6 +29,7 @@ weather-utils = { version = "0.5", features = ["no-std"] }
 embedded-hal-mock = { version = "0.11", default-features = false, features = [
     "eh1",
 ] }
+heapless = "0.9"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 linux-embedded-hal = "0.4"
