@@ -494,8 +494,13 @@ mod tests {
             Ok(m) => m,
             Err(e) => panic!("Expected Ok(measurement), got Err({e:?})"),
         };
-        assert!((measurement.temperature.celsius().value() - 20.18).abs() < 0.01);
-        assert!((measurement.relative_humidity.value() - 48.32).abs() < 0.01);
+        assert_eq!(
+            measurement,
+            TemperatureAndRelativeHumidity {
+                temperature: Celsius(20.18),
+                relative_humidity: RelativeHumidity::new(48.32).unwrap()
+            }
+        );
         device.i2c.done();
     }
 
@@ -521,8 +526,13 @@ mod tests {
             Ok(m) => m,
             Err(e) => panic!("Expected Ok(measurement), got Err({e:?})"),
         };
-        assert!((measurement.temperature.celsius().value() - 20.18).abs() < 0.01);
-        assert!((measurement.relative_humidity.value() - 48.32).abs() < 0.01);
+        assert_eq!(
+            measurement,
+            TemperatureAndRelativeHumidity {
+                temperature: Celsius(20.18),
+                relative_humidity: RelativeHumidity::new(48.32).unwrap()
+            }
+        );
         device.i2c.done();
     }
 
@@ -547,8 +557,13 @@ mod tests {
             Ok(m) => m,
             Err(e) => panic!("Expected Ok(measurement), got Err({e:?})"),
         };
-        assert!((measurement.temperature.celsius().value() - 32.31).abs() < 0.01);
-        assert!((measurement.relative_humidity.value() - 79.52).abs() < 0.01);
+        assert_eq!(
+            measurement,
+            TemperatureAndRelativeHumidity {
+                temperature: Celsius(32.31),
+                relative_humidity: RelativeHumidity::new(79.52).unwrap()
+            }
+        );
         device.i2c.done();
     }
 }
