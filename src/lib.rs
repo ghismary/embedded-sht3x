@@ -248,13 +248,25 @@ where
     }
 
     /// Create a new instance of the SHT3x device.
-    pub fn new(i2c: I2C, address: SevenBitAddress, delay: D) -> Self {
-        Self {
+    #[maybe_async_cfg::maybe(
+        sync(not(feature = "async"), keep_self),
+        async(feature = "async", keep_self)
+    )]
+    pub async fn new(
+        i2c: I2C,
+        address: SevenBitAddress,
+        delay: D,
+    ) -> Result<Self, Error<I2C::Error>> {
+        let mut dev = Self {
             address,
             delay,
             i2c,
             repeatability: Repeatability::Medium,
-        }
+        };
+
+        dev.reset().await?;
+
+        Ok(dev)
     }
 
     /// Perform a soft reset to force the system into a well-defined state without removing
@@ -292,10 +304,25 @@ where
 
 #[cfg(test)]
 mod tests {
+    use core::fmt::Write;
+
+    use embedded_hal::i2c::ErrorKind;
     use embedded_hal_mock::eh1::delay::StdSleep as Delay;
     use embedded_hal_mock::eh1::i2c::{Mock as I2cMock, Transaction as I2cTransaction};
+    use heapless::String;
 
     use super::*;
+
+    fn create_device() -> Sht3x<I2cMock, Delay> {
+        let expectations = [I2cTransaction::write(
+            DEFAULT_I2C_ADDRESS,
+            RESET_COMMAND.to_vec(),
+        )];
+        let i2c = I2cMock::new(&expectations);
+        let mut device = Sht3x::new(i2c, DEFAULT_I2C_ADDRESS, Delay {}).unwrap();
+        device.i2c.done();
+        device
+    }
 
     #[test]
     fn clear_status() {
@@ -306,10 +333,14 @@ mod tests {
             I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00, 0x81].to_vec()),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
-        device.clear_status().unwrap();
-        let status = device.get_status().unwrap();
+        let mut device = create_device();
+        device.i2c.update_expectations(&expectations);
+        assert!(matches!(device.clear_status(), Ok(())));
+        let status = device.get_status();
+        let status = match status {
+            Ok(s) => s,
+            Err(e) => panic!("Expected Ok(status), got Err({e:?})"),
+        };
         assert!(!status.contains(Status::WRITE_DATA_CHECKSUM));
         assert!(!status.contains(Status::COMMAND));
         assert!(!status.contains(Status::RESET));
@@ -317,7 +348,10 @@ mod tests {
         assert!(!status.contains(Status::RH_TRACKING_ALERT));
         assert!(!status.contains(Status::HEATER));
         assert!(!status.contains(Status::ALERT_PENDING));
-        i2c.done();
+        let mut buffer: String<64> = String::new();
+        write!(&mut buffer, "{status}").unwrap();
+        assert_eq!(buffer, "");
+        device.i2c.done();
     }
 
     #[test]
@@ -328,9 +362,13 @@ mod tests {
             I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00, 0x81].to_vec()),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
-        let status = device.get_status().unwrap();
+        let mut device = create_device();
+        device.i2c.update_expectations(&expectations);
+        let status = device.get_status();
+        let status = match status {
+            Ok(s) => s,
+            Err(e) => panic!("Expected Ok(status), got Err({e:?})"),
+        };
         assert!(!status.contains(Status::WRITE_DATA_CHECKSUM));
         assert!(!status.contains(Status::COMMAND));
         assert!(!status.contains(Status::RESET));
@@ -338,7 +376,25 @@ mod tests {
         assert!(!status.contains(Status::RH_TRACKING_ALERT));
         assert!(!status.contains(Status::HEATER));
         assert!(!status.contains(Status::ALERT_PENDING));
-        i2c.done();
+        let mut buffer: String<64> = String::new();
+        write!(&mut buffer, "{status}").unwrap();
+        assert_eq!(buffer, "");
+        device.i2c.done();
+    }
+
+    #[test]
+    fn get_status_bad_crc() {
+        let expectations = [
+            I2cTransaction::transaction_start(DEFAULT_I2C_ADDRESS),
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, GET_STATUS_COMMAND.to_vec()),
+            I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x00, 0x73].to_vec()),
+            I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
+        ];
+        let mut device = create_device();
+        device.i2c.update_expectations(&expectations);
+        let err = device.get_status().expect_err("Bad CRC");
+        assert!(matches!(err, Error::BadCrc));
+        device.i2c.done();
     }
 
     #[test]
@@ -355,10 +411,14 @@ mod tests {
             I2cTransaction::read(DEFAULT_I2C_ADDRESS, [0x00, 0x03, 0xd2].to_vec()),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
-        device.enable_heater().unwrap();
-        let status = device.get_status().unwrap();
+        let mut device = create_device();
+        device.i2c.update_expectations(&expectations);
+        assert!(matches!(device.enable_heater(), Ok(())));
+        let status = device.get_status();
+        let status = match status {
+            Ok(s) => s,
+            Err(e) => panic!("Expected Ok(status), got Err({e:?})"),
+        };
         assert!(status.contains(Status::WRITE_DATA_CHECKSUM));
         assert!(status.contains(Status::COMMAND));
         assert!(!status.contains(Status::RESET));
@@ -366,8 +426,15 @@ mod tests {
         assert!(!status.contains(Status::RH_TRACKING_ALERT));
         assert!(status.contains(Status::HEATER));
         assert!(!status.contains(Status::ALERT_PENDING));
-        device.disable_heater().unwrap();
-        let status = device.get_status().unwrap();
+        let mut buffer: String<64> = String::new();
+        write!(&mut buffer, "{status}").unwrap();
+        assert_eq!(buffer, "WRITE_DATA_CHECKSUM | COMMAND | HEATER");
+        assert!(matches!(device.disable_heater(), Ok(())));
+        let status = device.get_status();
+        let status = match status {
+            Ok(s) => s,
+            Err(e) => panic!("Expected Ok(status), got Err({e:?})"),
+        };
         assert!(status.contains(Status::WRITE_DATA_CHECKSUM));
         assert!(status.contains(Status::COMMAND));
         assert!(!status.contains(Status::RESET));
@@ -375,7 +442,10 @@ mod tests {
         assert!(!status.contains(Status::RH_TRACKING_ALERT));
         assert!(!status.contains(Status::HEATER));
         assert!(!status.contains(Status::ALERT_PENDING));
-        i2c.done();
+        let mut buffer: String<64> = String::new();
+        write!(&mut buffer, "{status}").unwrap();
+        assert_eq!(buffer, "WRITE_DATA_CHECKSUM | COMMAND");
+        device.i2c.done();
     }
 
     #[test]
@@ -384,10 +454,22 @@ mod tests {
             DEFAULT_I2C_ADDRESS,
             RESET_COMMAND.to_vec(),
         )];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
-        device.reset().unwrap();
-        i2c.done();
+        let mut device = create_device();
+        device.i2c.update_expectations(&expectations);
+        assert!(matches!(device.reset(), Ok(())));
+        device.i2c.done();
+    }
+
+    #[test]
+    fn reset_with_arbitration_loss_error() {
+        let expectations = [
+            I2cTransaction::write(DEFAULT_I2C_ADDRESS, RESET_COMMAND.to_vec())
+                .with_error(ErrorKind::ArbitrationLoss),
+        ];
+        let mut device = create_device();
+        device.i2c.update_expectations(&expectations);
+        assert!(matches!(device.reset(), Err(Error::I2c(_))));
+        device.i2c.done();
     }
 
     #[test]
@@ -404,13 +486,17 @@ mod tests {
             ),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        let mut device = create_device();
         device.repeatability = Repeatability::High;
-        let measurement = device.single_measurement().unwrap();
+        device.i2c.update_expectations(&expectations);
+        let measurement = device.single_measurement();
+        let measurement = match measurement {
+            Ok(m) => m,
+            Err(e) => panic!("Expected Ok(measurement), got Err({e:?})"),
+        };
         assert!((measurement.temperature.celsius().value() - 20.18).abs() < 0.01);
         assert!((measurement.relative_humidity.value() - 48.32).abs() < 0.01);
-        i2c.done();
+        device.i2c.done();
     }
 
     #[test]
@@ -427,13 +513,17 @@ mod tests {
             ),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
+        let mut device = create_device();
         device.repeatability = Repeatability::Low;
-        let measurement = device.single_measurement().unwrap();
+        device.i2c.update_expectations(&expectations);
+        let measurement = device.single_measurement();
+        let measurement = match measurement {
+            Ok(m) => m,
+            Err(e) => panic!("Expected Ok(measurement), got Err({e:?})"),
+        };
         assert!((measurement.temperature.celsius().value() - 20.18).abs() < 0.01);
         assert!((measurement.relative_humidity.value() - 48.32).abs() < 0.01);
-        i2c.done();
+        device.i2c.done();
     }
 
     #[test]
@@ -450,11 +540,15 @@ mod tests {
             ),
             I2cTransaction::transaction_end(DEFAULT_I2C_ADDRESS),
         ];
-        let mut i2c = I2cMock::new(&expectations);
-        let mut device = Sht3x::new(&mut i2c, DEFAULT_I2C_ADDRESS, Delay {});
-        let measurement = device.single_measurement().unwrap();
+        let mut device = create_device();
+        device.i2c.update_expectations(&expectations);
+        let measurement = device.single_measurement();
+        let measurement = match measurement {
+            Ok(m) => m,
+            Err(e) => panic!("Expected Ok(measurement), got Err({e:?})"),
+        };
         assert!((measurement.temperature.celsius().value() - 32.31).abs() < 0.01);
         assert!((measurement.relative_humidity.value() - 79.52).abs() < 0.01);
-        i2c.done();
+        device.i2c.done();
     }
 }

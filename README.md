@@ -78,7 +78,7 @@ mod linux {
         }
 
         // Create the sensor and configure its repeatability
-        let mut sensor = Sht3x::new(i2c, DEFAULT_I2C_ADDRESS, hal::Delay {});
+        let mut sensor = Sht3x::new(i2c, DEFAULT_I2C_ADDRESS, hal::Delay {})?;
         sensor.repeatability = High;
 
         // Perform a temperature and humidity measurement
@@ -93,7 +93,7 @@ mod linux {
 }
 fn main() {
     #[cfg(target_os = "linux")]
-    linux::main();
+    let _ = linux::main();
     #[cfg(not(target_os = "linux"))]
     println!("This example only works on Linux");
 }
